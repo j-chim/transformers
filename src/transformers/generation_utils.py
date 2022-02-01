@@ -497,7 +497,7 @@ class GenerationMixin:
 
         ######################################################################
         # TODO remove temporary workaround
-        style_prefix = ["noised_", "orig_"]
+        style_prefix = ["noised_", "orig_", "style_"]
         encoder_kwargs = {
             argument: value
             for argument, value in model_kwargs.items()
