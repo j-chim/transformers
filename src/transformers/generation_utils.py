@@ -494,19 +494,48 @@ class GenerationMixin:
 
         # 2. prepare encoder args and encoder kwargs from model kwargs
         irrelevant_prefix = ["decoder_", "cross_attn", "use_cache"]
+
+        ######################################################################
+        # TODO remove temporary workaround
+        style_prefix = ["noised_", "orig_"]
         encoder_kwargs = {
             argument: value
             for argument, value in model_kwargs.items()
-            if not any(argument.startswith(p) for p in irrelevant_prefix)
+            if not any(argument.startswith(p) for p in irrelevant_prefix + style_prefix)
+        }
+        style_kwargs = {
+            argument: value
+            for argument, value in model_kwargs.items()
+            if any(argument.startswith(p) for p in style_prefix)
         }
 
         # 3. make sure that encoder returns `ModelOutput`
         model_input_name = model_input_name if model_input_name is not None else self.main_input_name
         encoder_kwargs["return_dict"] = True
         encoder_kwargs[model_input_name] = inputs_tensor
-        model_kwargs["encoder_outputs"]: ModelOutput = encoder(**encoder_kwargs)
+        
+        encoder_hidden_states = encoder(**encoder_kwargs)
+
+        # last hidden state; take average of vectors; take the first token (<style>)
+        style_vec_noise = encoder(
+            input_ids=style_kwargs["noised_input_ids"],
+            attention_mask=style_kwargs["noised_attention_mask"],
+            return_dict=False
+            )[0].mean(dim=0)[0]
+        style_vec_orig = self.encoder(
+            input_ids=style_kwargs["orig_input_ids"],
+            attention_mask=style_kwargs["orig_attention_mask"],
+            return_dict=False
+            )[0].mean(dim=0)[0]
+        style_vec = (style_vec_orig - style_vec_noise)
+        style_vec = style_vec.view(encoder_kwargs["input_ids"].size()[0], -1, self.model_dim)
+        encoder_hidden_states["last_hidden_state"] += style_vec
+
+        model_kwargs["encoder_outputs"]: ModelOutput = encoder_hidden_states
+        ######################################################################
 
         return model_kwargs
+        
 
     def _prepare_decoder_input_ids_for_generation(
         self,
